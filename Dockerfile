@@ -16,9 +16,6 @@ COPY tests/ tests/
 COPY pyproject.toml .
 RUN python -m pytest --tb=short -q 2>&1 && rm -rf tests/ .pytest_cache
 
-# Create empty database with tables ready
-RUN python -c "from app.database import Base, engine; Base.metadata.create_all(bind=engine)"
-
 # Expose port (Railway uses $PORT, default 8000 for local)
 EXPOSE ${PORT:-8000}
 

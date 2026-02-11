@@ -32,6 +32,14 @@ app = FastAPI(
 app.include_router(users_router)
 app.include_router(upload_router)
 
+
+@app.on_event("startup")
+def on_startup():  # pragma: no cover
+    """Create database tables on startup if they don't exist."""
+    from app.database import Base, engine
+
+    Base.metadata.create_all(bind=engine)
+
 # Serve the dashboard UI and coverage report
 _project_root = Path(__file__).resolve().parent.parent
 _static_dir = _project_root / "static"
