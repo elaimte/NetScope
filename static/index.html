@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Internet Usage Monitor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .glass {
+      background: rgba(255,255,255,0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+    .tab-active {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(99,102,241,0.4);
+    }
+    .loader {
+      border: 3px solid #e5e7eb;
+      border-top: 3px solid #6366f1;
+      border-radius: 50%;
+      width: 28px; height: 28px;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .fade-in { animation: fadeIn .35s ease-out; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .rank-badge {
+      background: linear-gradient(135deg, #f59e0b, #f97316);
+      color: #fff;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; font-weight: 700; font-size: 13px;
+    }
+    .rank-badge.top1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+    .rank-badge.top2 { background: linear-gradient(135deg, #94a3b8, #64748b); }
+    .rank-badge.top3 { background: linear-gradient(135deg, #d97706, #b45309); }
+    tr:hover td { background: rgba(99,102,241,0.04); }
+    canvas { max-height: 260px; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-purple-50">
+
+  <!-- Header -->
+  <header class="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-800">Internet Usage Monitor</h1>
+          <p class="text-xs text-slate-500">Real-time analytics dashboard</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="openUploadModal()"
+          class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:shadow-lg hover:shadow-orange-300/40 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          Upload CSV
+        </button>
+        <button onclick="showTab('about')" id="tab-about"
+          class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Project Details
+        </button>
+        <a href="/docs" target="_blank"
+          class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:shadow-lg hover:shadow-emerald-300/40 transition-all">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          API Docs
+        </a>
+        <div id="health-badge" class="flex items-center gap-2 text-sm">
+          <span class="w-2 h-2 rounded-full bg-gray-400 animate-pulse" id="health-dot"></span>
+          <span class="text-slate-500" id="health-text">Checking…</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+    <!-- Tabs -->
+    <div class="flex gap-2">
+      <button onclick="showTab('top')" id="tab-top"
+        class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all tab-active">
+        🏆 Top Users
+      </button>
+      <button onclick="showTab('details')" id="tab-details"
+        class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all bg-white text-slate-600 hover:bg-slate-50">
+        🔍 User Details
+      </button>
+    </div>
+
+    <!-- ===== PROJECT DETAILS TAB ===== -->
+    <section id="panel-about" class="hidden space-y-6 fade-in">
+
+      <!-- Hero -->
+      <div class="glass rounded-2xl p-8 space-y-3">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-2xl font-bold text-slate-800">Internet Usage Monitoring Service</h2>
+            <p class="text-sm text-slate-500">MishiPay Backend Engineering Challenge</p>
+          </div>
+        </div>
+        <p class="text-slate-600 leading-relaxed max-w-3xl">
+          This project is a <strong>reusable HTTP service</strong> that ingests an internet usage dataset and exposes
+          analytics APIs. It answers questions like <em>"Who are the heaviest internet users?"</em> and
+          <em>"How much data did a specific user consume in the last 7 days?"</em> — all with high performance
+          and clean, tested code.
+        </p>
+      </div>
+
+      <!-- Assignment Requirements -->
+      <div class="glass rounded-2xl p-6 space-y-5">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <span class="text-xl">📝</span> Assignment Requirements
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white/60 rounded-xl p-5 border border-slate-100 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-sm font-bold">1</span>
+              <h4 class="font-semibold text-slate-700">Data Ingestion Script</h4>
+            </div>
+            <p class="text-sm text-slate-500">A script that reads the provided CSV dataset (100,000 rows of internet sessions) and loads it into the database. Upload &amp; download columns are in <strong>Kilobits</strong>.</p>
+            <span class="inline-block text-xs font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md">✓ Implemented</span>
+          </div>
+          <div class="bg-white/60 rounded-xl p-5 border border-slate-100 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-sm font-bold">2</span>
+              <h4 class="font-semibold text-slate-700">Top Users API (Paginated)</h4>
+            </div>
+            <p class="text-sm text-slate-500">A paginated HTTP API listing users ranked by their total internet usage in the last 30 days, also returning usage breakdowns for 1-day, 7-day &amp; 30-day periods.</p>
+            <span class="inline-block text-xs font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md">✓ Implemented</span>
+          </div>
+          <div class="bg-white/60 rounded-xl p-5 border border-slate-100 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-sm font-bold">3</span>
+              <h4 class="font-semibold text-slate-700">User Details API</h4>
+            </div>
+            <p class="text-sm text-slate-500">An HTTP API to search users by exact name and return their upload, download, total usage &amp; session count for 1-day, 7-day &amp; 30-day windows relative to a given timestamp.</p>
+            <span class="inline-block text-xs font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md">✓ Implemented</span>
+          </div>
+          <div class="bg-white/60 rounded-xl p-5 border border-slate-100 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-sm font-bold">4</span>
+              <h4 class="font-semibold text-slate-700">100% Unit Test Coverage</h4>
+            </div>
+            <p class="text-sm text-slate-500">Full test coverage across both APIs and the ingestion script — covering all general cases, branches &amp; edge cases. 85 tests total.</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="inline-block text-xs font-medium bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md">✓ 100% Coverage</span>
+              <a href="/coverage" target="_blank"
+                class="inline-flex items-center gap-1 text-xs font-semibold bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-md hover:bg-indigo-100 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+                View Coverage Report
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tech Stack -->
+      <div class="glass rounded-2xl p-6 space-y-5">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <span class="text-xl">⚙️</span> Tech Stack
+        </h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl">🐍</p>
+            <p class="text-sm font-semibold text-slate-700 mt-1">Python 3.11</p>
+            <p class="text-xs text-slate-400">Language</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl">⚡</p>
+            <p class="text-sm font-semibold text-slate-700 mt-1">FastAPI</p>
+            <p class="text-xs text-slate-400">Web Framework</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl">🗃️</p>
+            <p class="text-sm font-semibold text-slate-700 mt-1">SQLAlchemy</p>
+            <p class="text-xs text-slate-400">ORM</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl">💾</p>
+            <p class="text-sm font-semibold text-slate-700 mt-1">SQLite</p>
+            <p class="text-xs text-slate-400">Database</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl">🐼</p>
+            <p class="text-sm font-semibold text-slate-700 mt-1">Pandas</p>
+            <p class="text-xs text-slate-400">Data Loading</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl">🧪</p>
+            <p class="text-sm font-semibold text-slate-700 mt-1">Pytest</p>
+            <p class="text-xs text-slate-400">Testing</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Architecture & Performance -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass rounded-2xl p-6 space-y-4">
+          <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <span class="text-xl">🏗️</span> Architecture
+          </h3>
+          <div class="bg-slate-900 rounded-xl p-5 text-sm font-mono text-slate-300 leading-relaxed overflow-x-auto">
+            <pre class="whitespace-pre">dataset.csv
+     │
+     ▼  scripts/ingest.py
+  SQLite DB (usage_records)
+     │
+     ▼  app/services/usage_service.py
+  FastAPI API
+     │
+     ├── GET /api/v1/users/top
+     │        Paginated top users
+     │
+     ├── GET /api/v1/users/details
+     │        Single user lookup
+     │
+     ├── GET /dashboard
+     │        This UI
+     │
+     └── GET /docs
+              Swagger API docs</pre>
+          </div>
+        </div>
+        <div class="glass rounded-2xl p-6 space-y-4">
+          <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <span class="text-xl">🚀</span> Performance Optimizations
+          </h3>
+          <ul class="space-y-3">
+            <li class="flex gap-3">
+              <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</span>
+              <div>
+                <p class="text-sm font-semibold text-slate-700">Single-Query Aggregation</p>
+                <p class="text-xs text-slate-500">1-day, 7-day &amp; 30-day stats computed in one SQL query using CASE expressions — zero extra DB round-trips.</p>
+              </div>
+            </li>
+            <li class="flex gap-3">
+              <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</span>
+              <div>
+                <p class="text-sm font-semibold text-slate-700">Denormalized total_kb</p>
+                <p class="text-xs text-slate-500">Pre-computed upload + download stored at ingestion time so ranking queries avoid on-the-fly calculation.</p>
+              </div>
+            </li>
+            <li class="flex gap-3">
+              <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</span>
+              <div>
+                <p class="text-sm font-semibold text-slate-700">Composite Indexes</p>
+                <p class="text-xs text-slate-500">Indexes on (username, start_time), username, and start_time for fast filtered aggregations &amp; lookups.</p>
+              </div>
+            </li>
+            <li class="flex gap-3">
+              <span class="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">4</span>
+              <div>
+                <p class="text-sm font-semibold text-slate-700">Batch Insertion</p>
+                <p class="text-xs text-slate-500">100K records ingested in ~1.3 seconds using configurable batch inserts (default 5,000 per batch).</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Dataset Info -->
+      <div class="glass rounded-2xl p-6 space-y-4">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <span class="text-xl">📊</span> Dataset Overview
+        </h3>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl font-bold text-indigo-600">100,000</p>
+            <p class="text-xs text-slate-500 mt-1">Total Records</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl font-bold text-purple-600">6</p>
+            <p class="text-xs text-slate-500 mt-1">CSV Columns</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl font-bold text-orange-600">Nov–Dec</p>
+            <p class="text-xs text-slate-500 mt-1">2022 Date Range</p>
+          </div>
+          <div class="bg-white/60 rounded-xl p-4 text-center border border-slate-100">
+            <p class="text-2xl font-bold text-emerald-600">Kilobits</p>
+            <p class="text-xs text-slate-500 mt-1">Data Unit</p>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <th class="px-4 py-2">Column</th>
+                <th class="px-4 py-2">Description</th>
+                <th class="px-4 py-2">Example</th>
+              </tr>
+            </thead>
+            <tbody class="text-slate-600">
+              <tr class="border-b border-slate-100"><td class="px-4 py-2 font-medium">username</td><td class="px-4 py-2">User's identifier</td><td class="px-4 py-2 font-mono text-xs">brainyHeron5</td></tr>
+              <tr class="border-b border-slate-100"><td class="px-4 py-2 font-medium">mac_address</td><td class="px-4 py-2">Device MAC address</td><td class="px-4 py-2 font-mono text-xs">74:73:4E:09:DE:6F</td></tr>
+              <tr class="border-b border-slate-100"><td class="px-4 py-2 font-medium">start_time</td><td class="px-4 py-2">Session start timestamp</td><td class="px-4 py-2 font-mono text-xs">2022-11-04 15:43:33</td></tr>
+              <tr class="border-b border-slate-100"><td class="px-4 py-2 font-medium">usage_time</td><td class="px-4 py-2">Session duration (H:MM:SS)</td><td class="px-4 py-2 font-mono text-xs">4:50:20</td></tr>
+              <tr class="border-b border-slate-100"><td class="px-4 py-2 font-medium">upload</td><td class="px-4 py-2">Data uploaded (Kilobits)</td><td class="px-4 py-2 font-mono text-xs">3512752.28</td></tr>
+              <tr><td class="px-4 py-2 font-medium">download</td><td class="px-4 py-2">Data downloaded (Kilobits)</td><td class="px-4 py-2 font-mono text-xs">7462017.97</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Project Structure -->
+      <div class="glass rounded-2xl p-6 space-y-4">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <span class="text-xl">📁</span> Project Structure
+        </h3>
+        <div class="bg-slate-900 rounded-xl p-5 text-sm font-mono text-slate-300 leading-relaxed overflow-x-auto">
+          <pre class="whitespace-pre">MishiPay/
+├── app/
+│   ├── config.py              Settings (env-based)
+│   ├── database.py            Engine, session, Base
+│   ├── main.py                FastAPI entry point
+│   ├── models.py              UsageRecord ORM model
+│   ├── schemas.py             Pydantic schemas
+│   ├── routers/users.py       API endpoints
+│   └── services/
+│       ├── ingestion.py       CSV → DB logic
+│       └── usage_service.py   Analytics queries
+├── scripts/ingest.py          CLI ingestion tool
+├── static/index.html          This dashboard
+├── tests/                     85 tests, 100% coverage
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+└── README.md</pre>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ===== TOP USERS TAB ===== -->
+    <section id="panel-top" class="space-y-6 fade-in">
+
+      <!-- Controls -->
+      <div class="glass rounded-2xl p-5 flex flex-wrap items-end gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Reference Date</label>
+          <input type="datetime-local" id="ref-date" value="2022-12-17T23:59"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Per Page</label>
+          <select id="per-page"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+        <button onclick="loadTopUsers(1)"
+          class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:shadow-lg hover:shadow-indigo-300/40 transition-all">
+          Load
+        </button>
+      </div>
+
+      <!-- Summary Cards -->
+      <div id="summary-cards" class="grid grid-cols-1 sm:grid-cols-3 gap-4 hidden">
+        <div class="glass rounded-2xl p-5">
+          <p class="text-xs font-medium text-slate-500">Total Active Users</p>
+          <p class="text-2xl font-bold text-slate-800 mt-1" id="stat-total-users">—</p>
+        </div>
+        <div class="glass rounded-2xl p-5">
+          <p class="text-xs font-medium text-slate-500">Current Page</p>
+          <p class="text-2xl font-bold text-slate-800 mt-1" id="stat-page-info">—</p>
+        </div>
+        <div class="glass rounded-2xl p-5">
+          <p class="text-xs font-medium text-slate-500">Reference Date</p>
+          <p class="text-2xl font-bold text-slate-800 mt-1 text-base" id="stat-ref-date">—</p>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="glass rounded-2xl overflow-hidden">
+        <div id="top-loader" class="hidden flex justify-center py-12"><div class="loader"></div></div>
+        <div id="top-empty" class="hidden text-center py-12 text-slate-400">Click <strong>Load</strong> to fetch top users</div>
+        <table id="top-table" class="w-full text-sm hidden">
+          <thead>
+            <tr class="bg-slate-50/80 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <th class="px-5 py-3">Rank</th>
+              <th class="px-5 py-3">Username</th>
+              <th class="px-5 py-3 text-right">1-Day (MB)</th>
+              <th class="px-5 py-3 text-right">7-Day (MB)</th>
+              <th class="px-5 py-3 text-right">30-Day (MB)</th>
+              <th class="px-5 py-3 text-right">Sessions (30d)</th>
+            </tr>
+          </thead>
+          <tbody id="top-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div id="pagination" class="hidden flex items-center justify-center gap-2"></div>
+
+      <!-- Chart -->
+      <div id="chart-wrapper" class="glass rounded-2xl p-6 hidden">
+        <h3 class="text-sm font-semibold text-slate-600 mb-4">Top Users — 30-Day Usage Breakdown</h3>
+        <canvas id="topChart"></canvas>
+      </div>
+    </section>
+
+    <!-- ===== USER DETAILS TAB ===== -->
+    <section id="panel-details" class="space-y-6 hidden">
+
+      <!-- Search -->
+      <div class="glass rounded-2xl p-5 flex flex-wrap items-end gap-4">
+        <div class="flex-1 min-w-[200px]">
+          <label class="block text-xs font-medium text-slate-500 mb-1">Username (exact)</label>
+          <input type="text" id="detail-username" placeholder="e.g. brainyHeron5"
+            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Timestamp</label>
+          <input type="datetime-local" id="detail-ts" value="2022-12-17T23:59"
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none" />
+        </div>
+        <button onclick="loadUserDetails()"
+          class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:shadow-lg hover:shadow-indigo-300/40 transition-all">
+          Search
+        </button>
+      </div>
+
+      <!-- Detail Result -->
+      <div id="detail-loader" class="hidden flex justify-center py-12"><div class="loader"></div></div>
+      <div id="detail-empty" class="glass rounded-2xl text-center py-12 text-slate-400">
+        Enter a username and click <strong>Search</strong>
+      </div>
+      <div id="detail-error" class="hidden glass rounded-2xl text-center py-8 text-red-500 font-medium"></div>
+
+      <div id="detail-result" class="hidden space-y-6 fade-in">
+        <!-- User header -->
+        <div class="glass rounded-2xl p-6 flex items-center gap-4">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xl font-bold" id="detail-avatar">?</div>
+          <div>
+            <h2 class="text-xl font-bold text-slate-800" id="detail-name">—</h2>
+            <p class="text-xs text-slate-500" id="detail-ts-display">—</p>
+          </div>
+        </div>
+
+        <!-- Period cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="glass rounded-2xl p-5 space-y-3" id="card-1d">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">Last 1 Day</span>
+              <span class="text-xs text-slate-400" id="d1-sessions">0 sessions</span>
+            </div>
+            <div class="space-y-2">
+              <div><span class="text-xs text-slate-500">Upload</span><p class="font-bold text-slate-800" id="d1-up">—</p></div>
+              <div><span class="text-xs text-slate-500">Download</span><p class="font-bold text-slate-800" id="d1-down">—</p></div>
+              <div class="border-t border-slate-200 pt-2"><span class="text-xs text-slate-500">Total</span><p class="font-bold text-lg text-indigo-600" id="d1-total">—</p></div>
+            </div>
+          </div>
+          <div class="glass rounded-2xl p-5 space-y-3" id="card-7d">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md">Last 7 Days</span>
+              <span class="text-xs text-slate-400" id="d7-sessions">0 sessions</span>
+            </div>
+            <div class="space-y-2">
+              <div><span class="text-xs text-slate-500">Upload</span><p class="font-bold text-slate-800" id="d7-up">—</p></div>
+              <div><span class="text-xs text-slate-500">Download</span><p class="font-bold text-slate-800" id="d7-down">—</p></div>
+              <div class="border-t border-slate-200 pt-2"><span class="text-xs text-slate-500">Total</span><p class="font-bold text-lg text-purple-600" id="d7-total">—</p></div>
+            </div>
+          </div>
+          <div class="glass rounded-2xl p-5 space-y-3" id="card-30d">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md">Last 30 Days</span>
+              <span class="text-xs text-slate-400" id="d30-sessions">0 sessions</span>
+            </div>
+            <div class="space-y-2">
+              <div><span class="text-xs text-slate-500">Upload</span><p class="font-bold text-slate-800" id="d30-up">—</p></div>
+              <div><span class="text-xs text-slate-500">Download</span><p class="font-bold text-slate-800" id="d30-down">—</p></div>
+              <div class="border-t border-slate-200 pt-2"><span class="text-xs text-slate-500">Total</span><p class="font-bold text-lg text-orange-600" id="d30-total">—</p></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail Chart -->
+        <div class="glass rounded-2xl p-6">
+          <h3 class="text-sm font-semibold text-slate-600 mb-4">Usage Over Time Periods</h3>
+          <canvas id="detailChart"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== UPLOAD CSV MODAL ===== -->
+  <div id="upload-modal" class="fixed inset-0 z-[100] hidden">
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeUploadModal()"></div>
+    <!-- Modal -->
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative fade-in overflow-hidden">
+        <!-- Header -->
+        <div class="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-100">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-slate-800">Upload CSV Dataset</h2>
+              <p class="text-xs text-slate-500">Replace or append internet usage data</p>
+            </div>
+          </div>
+          <button onclick="closeUploadModal()" class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-6 space-y-5">
+
+          <!-- Drop Zone -->
+          <div id="drop-zone"
+            class="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-400 hover:bg-indigo-50/30 transition-all cursor-pointer"
+            onclick="document.getElementById('csv-file-input').click()"
+            ondragover="event.preventDefault(); this.classList.add('border-indigo-400','bg-indigo-50/30')"
+            ondragleave="this.classList.remove('border-indigo-400','bg-indigo-50/30')"
+            ondrop="handleDrop(event)">
+            <svg class="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+            </svg>
+            <p class="text-sm font-medium text-slate-600">Drop your CSV file here or <span class="text-indigo-600 underline">browse</span></p>
+            <p class="text-xs text-slate-400 mt-1">Max 50 MB &middot; .csv files only</p>
+            <input type="file" id="csv-file-input" accept=".csv" class="hidden" onchange="handleFileSelect(this)" />
+          </div>
+
+          <!-- Selected File Info -->
+          <div id="file-info" class="hidden bg-slate-50 rounded-xl p-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-slate-700" id="file-name">—</p>
+                <p class="text-xs text-slate-400" id="file-size">—</p>
+              </div>
+            </div>
+            <button onclick="clearFile()" class="text-xs text-red-500 hover:text-red-700 font-medium">Remove</button>
+          </div>
+
+          <!-- Options -->
+          <div class="flex items-center gap-6">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="upload-clear" checked
+                class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              <span class="text-sm text-slate-600">Clear existing data before import</span>
+            </label>
+          </div>
+
+          <!-- Required Format Info -->
+          <details class="bg-slate-50 rounded-xl overflow-hidden">
+            <summary class="px-4 py-3 text-sm font-medium text-slate-600 cursor-pointer hover:bg-slate-100 transition-colors flex items-center gap-2">
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              Required CSV Format
+            </summary>
+            <div class="px-4 pb-4 space-y-2">
+              <p class="text-xs text-slate-500">Your CSV must have these exact column headers:</p>
+              <div class="flex flex-wrap gap-1.5">
+                <span class="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200">username</span>
+                <span class="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200">mac_address</span>
+                <span class="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200">start_time</span>
+                <span class="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200">usage_time</span>
+                <span class="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200">upload</span>
+                <span class="text-xs font-mono bg-white px-2 py-1 rounded border border-slate-200">download</span>
+              </div>
+              <div class="text-xs text-slate-400 space-y-1 mt-2">
+                <p><strong>upload / download</strong> — numeric values in Kilobits (non-negative)</p>
+                <p><strong>usage_time</strong> — duration format H:MM:SS or HH:MM:SS</p>
+                <p><strong>start_time</strong> — datetime like 2022-12-01 10:00:00</p>
+                <p><strong>username / mac_address</strong> — non-empty strings</p>
+              </div>
+            </div>
+          </details>
+
+          <!-- Error Display -->
+          <div id="upload-error" class="hidden bg-red-50 border border-red-200 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <div>
+                <p class="text-sm font-semibold text-red-700">Validation Error</p>
+                <p class="text-sm text-red-600 mt-1" id="upload-error-msg">—</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Success Display -->
+          <div id="upload-success" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <div>
+                <p class="text-sm font-semibold text-emerald-700">Upload Successful</p>
+                <p class="text-sm text-emerald-600 mt-1" id="upload-success-msg">—</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Progress -->
+          <div id="upload-progress" class="hidden space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-600 font-medium">Uploading & validating…</span>
+              <div class="loader"></div>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div class="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full animate-pulse" style="width:100%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3 border-t border-slate-100">
+          <button onclick="closeUploadModal()" class="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-200 transition-colors">
+            Cancel
+          </button>
+          <button onclick="submitUpload()" id="upload-btn"
+            class="px-6 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:shadow-lg hover:shadow-orange-300/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled>
+            Upload & Ingest
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="text-center text-xs text-slate-400 py-6">
+    Internet Usage Monitoring Service &middot; MishiPay Challenge
+  </footer>
+
+<script>
+const API = window.location.origin;
+
+// ── Health ──
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/`);
+    const d = await r.json();
+    document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+    document.getElementById('health-text').textContent = 'Service Healthy';
+    document.getElementById('health-text').className = 'text-emerald-600 font-medium';
+  } catch {
+    document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-red-500';
+    document.getElementById('health-text').textContent = 'Offline';
+    document.getElementById('health-text').className = 'text-red-500 font-medium';
+  }
+}
+checkHealth();
+
+// ── Tabs ──
+const tabs = ['top', 'details', 'about'];
+const tabBarClass = 'px-5 py-2.5 rounded-xl text-sm font-semibold transition-all';
+const aboutInactive = 'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all';
+const aboutActive = 'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-br from-indigo-500 to-purple-600 text-white border border-transparent shadow-lg shadow-indigo-300/40 transition-all';
+
+function showTab(tab) {
+  tabs.forEach(t => {
+    document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
+    if (t === 'about') {
+      document.getElementById('tab-about').className = t === tab ? aboutActive : aboutInactive;
+    } else {
+      document.getElementById('tab-' + t).className = t === tab
+        ? tabBarClass + ' tab-active'
+        : tabBarClass + ' bg-white text-slate-600 hover:bg-slate-50';
+    }
+  });
+}
+
+// ── Helpers ──
+function kbToMB(kb) { return (kb / 1024).toFixed(2); }
+function formatMB(kb) { return `${kbToMB(kb)} MB`; }
+
+// ── TOP USERS ──
+let topChart = null;
+let currentPage = 1;
+
+async function loadTopUsers(page = 1) {
+  currentPage = page;
+  const refDate = document.getElementById('ref-date').value;
+  const perPage = document.getElementById('per-page').value;
+
+  // Show loader
+  document.getElementById('top-loader').classList.remove('hidden');
+  document.getElementById('top-table').classList.add('hidden');
+  document.getElementById('top-empty').classList.add('hidden');
+  document.getElementById('pagination').classList.add('hidden');
+  document.getElementById('chart-wrapper').classList.add('hidden');
+  document.getElementById('summary-cards').classList.add('hidden');
+
+  const ts = refDate ? refDate.replace('T', 'T') + ':00' : '';
+  const url = `${API}/api/v1/users/top?page=${page}&per_page=${perPage}` + (ts ? `&reference_date=${ts}` : '');
+
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    document.getElementById('top-loader').classList.add('hidden');
+
+    if (!r.ok) {
+      document.getElementById('top-empty').textContent = d.detail || 'Error loading data';
+      document.getElementById('top-empty').classList.remove('hidden');
+      return;
+    }
+
+    // Summary cards
+    document.getElementById('summary-cards').classList.remove('hidden');
+    document.getElementById('stat-total-users').textContent = d.total_users.toLocaleString();
+    document.getElementById('stat-page-info').textContent = `${d.page} / ${d.total_pages}`;
+    document.getElementById('stat-ref-date').textContent = d.reference_date.replace('T', '  ');
+
+    // Table
+    const tbody = document.getElementById('top-body');
+    tbody.innerHTML = '';
+
+    if (d.data.length === 0) {
+      document.getElementById('top-empty').textContent = 'No users found for this page.';
+      document.getElementById('top-empty').classList.remove('hidden');
+      renderPagination(d.page, d.total_pages);
+      return;
+    }
+
+    d.data.forEach(u => {
+      const rankClass = u.rank === 1 ? 'top1' : u.rank === 2 ? 'top2' : u.rank === 3 ? 'top3' : '';
+      const row = document.createElement('tr');
+      row.className = 'border-t border-slate-100 cursor-pointer hover:bg-indigo-50/40 transition-colors';
+      row.onclick = () => {
+        document.getElementById('detail-username').value = u.username;
+        document.getElementById('detail-ts').value = refDate;
+        showTab('details');
+        loadUserDetails();
+      };
+      row.innerHTML = `
+        <td class="px-5 py-3"><div class="rank-badge ${rankClass}">${u.rank}</div></td>
+        <td class="px-5 py-3 font-semibold text-slate-800">${u.username}</td>
+        <td class="px-5 py-3 text-right text-slate-600 tabular-nums">${formatMB(u.usage_1_day.total_kb)}</td>
+        <td class="px-5 py-3 text-right text-slate-600 tabular-nums">${formatMB(u.usage_7_days.total_kb)}</td>
+        <td class="px-5 py-3 text-right font-semibold text-slate-800 tabular-nums">${formatMB(u.usage_30_days.total_kb)}</td>
+        <td class="px-5 py-3 text-right text-slate-600">${u.usage_30_days.sessions}</td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    document.getElementById('top-table').classList.remove('hidden');
+    renderPagination(d.page, d.total_pages);
+    renderTopChart(d.data);
+
+  } catch (e) {
+    document.getElementById('top-loader').classList.add('hidden');
+    document.getElementById('top-empty').textContent = 'Network error: ' + e.message;
+    document.getElementById('top-empty').classList.remove('hidden');
+  }
+}
+
+function renderPagination(page, totalPages) {
+  const el = document.getElementById('pagination');
+  el.innerHTML = '';
+  if (totalPages <= 1) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+
+  const btn = (label, pg, disabled, active) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.disabled = disabled;
+    b.className = active
+      ? 'w-9 h-9 rounded-lg text-sm font-semibold bg-indigo-500 text-white'
+      : disabled
+        ? 'w-9 h-9 rounded-lg text-sm font-semibold bg-slate-100 text-slate-300 cursor-not-allowed'
+        : 'w-9 h-9 rounded-lg text-sm font-semibold bg-white text-slate-600 hover:bg-indigo-50 border border-slate-200';
+    if (!disabled) b.onclick = () => loadTopUsers(pg);
+    return b;
+  };
+
+  el.appendChild(btn('‹', page - 1, page <= 1, false));
+
+  let start = Math.max(1, page - 2);
+  let end = Math.min(totalPages, page + 2);
+  if (start > 1) { el.appendChild(btn('1', 1, false, page === 1)); if (start > 2) el.appendChild(Object.assign(document.createElement('span'), { textContent: '…', className: 'text-slate-400 text-sm px-1' })); }
+  for (let i = start; i <= end; i++) el.appendChild(btn(String(i), i, false, i === page));
+  if (end < totalPages) { if (end < totalPages - 1) el.appendChild(Object.assign(document.createElement('span'), { textContent: '…', className: 'text-slate-400 text-sm px-1' })); el.appendChild(btn(String(totalPages), totalPages, false, page === totalPages)); }
+
+  el.appendChild(btn('›', page + 1, page >= totalPages, false));
+}
+
+function renderTopChart(data) {
+  const wrapper = document.getElementById('chart-wrapper');
+  wrapper.classList.remove('hidden');
+  if (topChart) topChart.destroy();
+
+  topChart = new Chart(document.getElementById('topChart'), {
+    type: 'bar',
+    data: {
+      labels: data.map(u => u.username),
+      datasets: [
+        { label: 'Upload (MB)', data: data.map(u => +kbToMB(u.usage_30_days.upload_kb)), backgroundColor: 'rgba(99,102,241,0.7)', borderRadius: 6 },
+        { label: 'Download (MB)', data: data.map(u => +kbToMB(u.usage_30_days.download_kb)), backgroundColor: 'rgba(168,85,247,0.7)', borderRadius: 6 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { position: 'top', labels: { font: { size: 12, family: 'Inter' } } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() + ' MB' }, grid: { color: 'rgba(0,0,0,0.04)' } }
+      }
+    }
+  });
+}
+
+// ── USER DETAILS ──
+let detailChart = null;
+
+async function loadUserDetails() {
+  const username = document.getElementById('detail-username').value.trim();
+  const ts = document.getElementById('detail-ts').value;
+  if (!username) { alert('Please enter a username'); return; }
+
+  // Show loader
+  document.getElementById('detail-loader').classList.remove('hidden');
+  document.getElementById('detail-result').classList.add('hidden');
+  document.getElementById('detail-empty').classList.add('hidden');
+  document.getElementById('detail-error').classList.add('hidden');
+
+  const timestamp = ts ? ts.replace('T', 'T') + ':00' : '';
+  const url = `${API}/api/v1/users/details?username=${encodeURIComponent(username)}&timestamp=${timestamp}`;
+
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    document.getElementById('detail-loader').classList.add('hidden');
+
+    if (!r.ok) {
+      document.getElementById('detail-error').textContent = d.detail || 'Error';
+      document.getElementById('detail-error').classList.remove('hidden');
+      return;
+    }
+
+    // Populate
+    document.getElementById('detail-avatar').textContent = d.username.charAt(0).toUpperCase();
+    document.getElementById('detail-name').textContent = d.username;
+    document.getElementById('detail-ts-display').textContent = 'Data as of ' + d.timestamp.replace('T', ' ');
+
+    // 1-day
+    document.getElementById('d1-up').textContent = formatMB(d.usage_1_day.upload_kb);
+    document.getElementById('d1-down').textContent = formatMB(d.usage_1_day.download_kb);
+    document.getElementById('d1-total').textContent = formatMB(d.usage_1_day.total_kb);
+    document.getElementById('d1-sessions').textContent = d.usage_1_day.sessions + ' sessions';
+
+    // 7-day
+    document.getElementById('d7-up').textContent = formatMB(d.usage_7_days.upload_kb);
+    document.getElementById('d7-down').textContent = formatMB(d.usage_7_days.download_kb);
+    document.getElementById('d7-total').textContent = formatMB(d.usage_7_days.total_kb);
+    document.getElementById('d7-sessions').textContent = d.usage_7_days.sessions + ' sessions';
+
+    // 30-day
+    document.getElementById('d30-up').textContent = formatMB(d.usage_30_days.upload_kb);
+    document.getElementById('d30-down').textContent = formatMB(d.usage_30_days.download_kb);
+    document.getElementById('d30-total').textContent = formatMB(d.usage_30_days.total_kb);
+    document.getElementById('d30-sessions').textContent = d.usage_30_days.sessions + ' sessions';
+
+    document.getElementById('detail-result').classList.remove('hidden');
+    renderDetailChart(d);
+
+  } catch (e) {
+    document.getElementById('detail-loader').classList.add('hidden');
+    document.getElementById('detail-error').textContent = 'Network error: ' + e.message;
+    document.getElementById('detail-error').classList.remove('hidden');
+  }
+}
+
+function renderDetailChart(d) {
+  if (detailChart) detailChart.destroy();
+  detailChart = new Chart(document.getElementById('detailChart'), {
+    type: 'bar',
+    data: {
+      labels: ['1 Day', '7 Days', '30 Days'],
+      datasets: [
+        { label: 'Upload (MB)', data: [+kbToMB(d.usage_1_day.upload_kb), +kbToMB(d.usage_7_days.upload_kb), +kbToMB(d.usage_30_days.upload_kb)], backgroundColor: 'rgba(99,102,241,0.7)', borderRadius: 6 },
+        { label: 'Download (MB)', data: [+kbToMB(d.usage_1_day.download_kb), +kbToMB(d.usage_7_days.download_kb), +kbToMB(d.usage_30_days.download_kb)], backgroundColor: 'rgba(168,85,247,0.7)', borderRadius: 6 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { position: 'top', labels: { font: { size: 12, family: 'Inter' } } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString() + ' MB' }, grid: { color: 'rgba(0,0,0,0.04)' } }
+      }
+    }
+  });
+}
+
+// ── Keyboard shortcut: Enter to search ──
+document.getElementById('detail-username').addEventListener('keydown', e => { if (e.key === 'Enter') loadUserDetails(); });
+
+// ── CSV UPLOAD ──
+let selectedFile = null;
+
+function openUploadModal() {
+  clearUploadState();
+  document.getElementById('upload-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeUploadModal() {
+  document.getElementById('upload-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+function clearUploadState() {
+  selectedFile = null;
+  document.getElementById('csv-file-input').value = '';
+  document.getElementById('file-info').classList.add('hidden');
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.getElementById('upload-error').classList.add('hidden');
+  document.getElementById('upload-success').classList.add('hidden');
+  document.getElementById('upload-progress').classList.add('hidden');
+  document.getElementById('upload-btn').disabled = true;
+}
+
+function clearFile() {
+  clearUploadState();
+}
+
+function handleFileSelect(input) {
+  if (input.files && input.files[0]) {
+    setFile(input.files[0]);
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('border-indigo-400', 'bg-indigo-50/30');
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    setFile(e.dataTransfer.files[0]);
+  }
+}
+
+function setFile(file) {
+  // Client-side validation
+  document.getElementById('upload-error').classList.add('hidden');
+  document.getElementById('upload-success').classList.add('hidden');
+
+  const name = file.name.toLowerCase();
+  if (!name.endsWith('.csv')) {
+    showUploadError('Invalid file type. Only .csv files are accepted.');
+    return;
+  }
+
+  if (file.size > 50 * 1024 * 1024) {
+    showUploadError('File too large. Maximum size is 50 MB.');
+    return;
+  }
+
+  if (file.size === 0) {
+    showUploadError('File is empty. Please select a CSV with data.');
+    return;
+  }
+
+  selectedFile = file;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-size').textContent = formatFileSize(file.size);
+  document.getElementById('file-info').classList.remove('hidden');
+  document.getElementById('drop-zone').classList.add('hidden');
+  document.getElementById('upload-btn').disabled = false;
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function showUploadError(msg) {
+  document.getElementById('upload-error-msg').textContent = msg;
+  document.getElementById('upload-error').classList.remove('hidden');
+  document.getElementById('upload-success').classList.add('hidden');
+}
+
+async function submitUpload() {
+  if (!selectedFile) return;
+
+  const clearExisting = document.getElementById('upload-clear').checked;
+
+  // Hide previous messages, show progress
+  document.getElementById('upload-error').classList.add('hidden');
+  document.getElementById('upload-success').classList.add('hidden');
+  document.getElementById('upload-progress').classList.remove('hidden');
+  document.getElementById('upload-btn').disabled = true;
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  const url = `${API}/api/v1/upload?clear_existing=${clearExisting}&batch_size=5000`;
+
+  try {
+    const r = await fetch(url, { method: 'POST', body: formData });
+    const d = await r.json();
+
+    document.getElementById('upload-progress').classList.add('hidden');
+
+    if (!r.ok) {
+      showUploadError(d.detail || 'Upload failed');
+      document.getElementById('upload-btn').disabled = false;
+      return;
+    }
+
+    // Success
+    document.getElementById('upload-success-msg').textContent = d.message;
+    document.getElementById('upload-success').classList.remove('hidden');
+    document.getElementById('upload-btn').disabled = true;
+
+    // Auto-refresh top users after a moment
+    setTimeout(() => {
+      showTab('top');
+      loadTopUsers(1);
+      closeUploadModal();
+    }, 2000);
+
+  } catch (e) {
+    document.getElementById('upload-progress').classList.add('hidden');
+    showUploadError('Network error: ' + e.message);
+    document.getElementById('upload-btn').disabled = false;
+  }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !document.getElementById('upload-modal').classList.contains('hidden')) {
+    closeUploadModal();
+  }
+});
+</script>
+</body>
+</html>
